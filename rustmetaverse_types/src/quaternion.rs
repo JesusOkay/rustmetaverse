@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::Vector3;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Quaternion {

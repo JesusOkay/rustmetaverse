@@ -48053,7 +48053,7 @@ mod tests {
         Packet::serialize(&request, &mut encoded);
         assert_ne!(encoded[0] & Header::MSG_ZEROCODED, 0);
 
-        let mut encoded = encoded.freeze();
+        let encoded = encoded.freeze();
         assert!(matches!(
             decode_packet(encoded.clone()),
             Ok(WrappedPacket::DirFindQuery(_))

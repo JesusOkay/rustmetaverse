@@ -301,9 +301,7 @@ impl GridClient {
                                     i_d: header.sequence,
                                 }],
                             };
-                            if let Err(error) =
-                                network.send_packet(&mut acknowledgement).await
-                            {
+                            if let Err(error) = network.send_packet(&mut acknowledgement).await {
                                 log::debug!("Could not acknowledge reliable packet: {error}");
                             }
                         }
