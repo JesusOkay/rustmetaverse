@@ -57,10 +57,19 @@ impl PacketDispatcher {
     ) {
         let packet_type = packet.packet_type();
         if let Some(handlers) = self.handlers.get(&packet_type) {
-            for handler in handlers {
-                // Clone packet for each handler to allow them to own data if needed
-                // WrappedPacket is Clone (derived)
-                handler(packet.clone(), network.clone(), simulator.clone()).await;
+            match handlers.len() {
+                0 => {}
+                1 => {
+                    handlers[0](packet, network, simulator).await;
+                }
+                n => {
+                    // All handlers except the last get a clone.
+                    for handler in &handlers[..n - 1] {
+                        handler(packet.clone(), network.clone(), simulator.clone()).await;
+                    }
+                    // Last handler gets ownership.
+                    handlers[n - 1](packet, network, simulator).await;
+                }
             }
         }
     }

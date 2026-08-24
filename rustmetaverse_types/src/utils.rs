@@ -1,6 +1,6 @@
 pub const PI: f32 = std::f32::consts::PI;
-pub const TWO_PI: f32 = PI * 2.0;
-pub const HALF_PI: f32 = PI / 2.0;
+pub const TWO_PI: f32 = std::f32::consts::TAU;
+pub const HALF_PI: f32 = std::f32::consts::FRAC_PI_2;
 pub const DEG_TO_RAD: f32 = PI / 180.0;
 pub const RAD_TO_DEG: f32 = 180.0 / PI;
 

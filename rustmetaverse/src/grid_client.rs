@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex, RwLock};
+use tokio::sync::{oneshot, Mutex};
 
 const USE_CIRCUIT_CODE_RETRIES: usize = 3;
 const USE_CIRCUIT_CODE_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(5);
@@ -25,7 +25,7 @@ const USE_CIRCUIT_CODE_TIMEOUT: tokio::time::Duration = tokio::time::Duration::f
 pub struct GridClient {
     pub network: Arc<NetworkManager>,
     pub simulator: Arc<Mutex<Option<Simulator>>>,
-    pub dispatcher: Arc<RwLock<PacketDispatcher>>,
+    pub dispatcher: Arc<PacketDispatcher>,
     /// Set once the simulator has acknowledged the UDP circuit with a region handshake.
     pub region_ready: Arc<AtomicBool>,
     reliable_acks: Arc<Mutex<HashMap<u32, oneshot::Sender<()>>>>,
@@ -162,7 +162,7 @@ impl GridClient {
                             };
 
                             if let Err(e) = network.send_packet(&mut reply).await {
-                                eprintln!("Failed to send RegionHandshakeReply: {}", e);
+                                log::error!("Failed to send RegionHandshakeReply: {}", e);
                             } else {
                                 log::debug!("Sent RegionHandshakeReply");
 
@@ -201,7 +201,7 @@ impl GridClient {
                                 };
 
                                 if let Err(e) = network.send_packet(&mut height_width).await {
-                                    eprintln!("Failed to send AgentHeightWidth: {}", e);
+                                    log::error!("Failed to send AgentHeightWidth: {}", e);
                                 } else {
                                     log::debug!("Sent AgentHeightWidth");
                                     // Firestorm is now able to use the circuit. Do not
@@ -219,11 +219,30 @@ impl GridClient {
         Ok(Self {
             network: Arc::new(network),
             simulator: Arc::new(Mutex::new(None)),
-            dispatcher: Arc::new(RwLock::new(dispatcher)),
+            dispatcher: Arc::new(dispatcher),
             region_ready,
             reliable_acks,
             network_loop_started: AtomicBool::new(false),
         })
+    }
+
+    /// Register a packet handler. Must be called before `start_network_loop`.
+    pub fn add_handler<F, Fut>(&self, packet_type: PacketType, handler: F)
+    where
+        F: Fn(WrappedPacket, Arc<NetworkManager>, Arc<Mutex<Option<Simulator>>>) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: std::future::Future<Output = ()> + Send + 'static,
+    {
+        // SAFETY: This is only safe before start_network_loop is called,
+        // because the dispatcher is not yet shared with the receive task.
+        // After that, the Arc is shared and get_mut returns None.
+        if let Some(dispatcher) = Arc::get_mut(&mut Arc::clone(&self.dispatcher)) {
+            dispatcher.add_handler(packet_type, handler);
+        } else {
+            log::error!("Cannot add handler after network loop has started");
+        }
     }
     pub async fn start_network_loop(&self) {
         if self.network_loop_started.swap(true, Ordering::AcqRel) {
@@ -289,16 +308,17 @@ impl GridClient {
                             }
                         }
 
-                        let mut data_mut = data.clone();
-                        match rustmetaverse_protocol::packets::decode_packet(&mut data_mut) {
+                        // Reuse the header_data clone that was already consumed
+                        // by Header::deserialize. decode_packet needs the full
+                        // packet (header + body), so use the original data.
+                        match rustmetaverse_protocol::packets::decode_packet(&mut data.clone()) {
                             Ok(packet) => {
                                 log::trace!(
                                     "Decoded packet type: {:?} (seq {})",
                                     packet.packet_type(),
                                     header.sequence
                                 );
-                                let dispatch = dispatcher.read().await;
-                                dispatch
+                                dispatcher
                                     .dispatch(packet, network.clone(), simulator.clone())
                                     .await;
                             }

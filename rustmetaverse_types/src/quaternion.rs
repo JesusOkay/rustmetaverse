@@ -84,7 +84,6 @@ impl Quaternion {
     }
 
     /// Rotate a vector by this quaternion.
-    /// Rotate a vector by this quaternion.
     #[inline]
     pub fn rotate(&self, v: &Vector3) -> Vector3 {
         // Standard quaternion rotation: v' = q * v * q^{-1}

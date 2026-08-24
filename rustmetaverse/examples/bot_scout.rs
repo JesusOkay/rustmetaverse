@@ -404,10 +404,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let avatar_names: AvatarNames = Arc::new(Mutex::new(HashMap::new()));
 
     {
-        let mut dispatcher = client.dispatcher.write().await;
         let coarse_locations = coarse_locations.clone();
 
-        dispatcher.add_handler(PacketType::CoarseLocationUpdate, move |packet, _, _| {
+        client.add_handler(PacketType::CoarseLocationUpdate, move |packet, _, _| {
             let coarse_locations = coarse_locations.clone();
 
             async move {
@@ -433,7 +432,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         let avatar_names = avatar_names.clone();
-        dispatcher.add_handler(PacketType::UUIDNameReply, move |packet, _, _| {
+        client.add_handler(PacketType::UUIDNameReply, move |packet, _, _| {
             let avatar_names = avatar_names.clone();
 
             async move {
