@@ -51,37 +51,42 @@ in Rust to gain:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     rustmetaverse                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
-│  │ GridClient   │  │  PacketDisp. │  │  NetworkMgr    │  │
-│  │ (login,      │──│  (async      │──│  (tokio UDP,   │  │
-│  │  circuit,    │  │   handlers)  │  │   actor send)  │  │
-│  │  handshake)  │  └──────────────┘  └────────────────┘  │
-│  └─────────────┘                                        │
-├─────────────────────────────────────────────────────────┤
-│                  rustmetaverse_protocol                  │
-│  ┌─────────┐  ┌────────────┐  ┌──────────┐  ┌─────────┐  │
-│  │ Header  │  │ ZeroCoding │  │ SafeBuf  │  │ Packets │  │
-│  │ (flags, │  │ (encode +  │  │ (bounds- │  │ (~470   │  │
-│  │  freq)  │  │  expand)   │  │  checked)│  │  defs)  │  │
-│  └─────────┘  └────────────┘  └──────────┘  └─────────┘  │
-├─────────────────────────────────────────────────────────┤
-│              rustmetaverse_structured_data                │
-│  ┌────────────────┐  ┌────────────────────────────────┐  │
-│  │  OSD enum       │  │  XML parser (LLSD <-> XML)    │  │
-│  │  (Bool, Int,    │  │  + XML-RPC response parser    │  │
-│  │   Real, Str,    │  │                               │  │
-│  │   UUID, ...)    │  │                               │  │
-│  └────────────────┘  └────────────────────────────────┘  │
-├─────────────────────────────────────────────────────────┤
-│                   rustmetaverse_types                    │
-│  ┌────────┐  ┌──────────┐  ┌────────────┐  ┌───────────┐  │
-│  │  UUID   │  │ Vector3  │  │ Quaternion │  │   utils   │  │
-│  │ (v4,   │  │ (math:   │  │ (rotate,   │  │ (PI, clamp│  │
-│  │  parse)│  │  dot,crs)│  │  normalize)│  │  consts)  │  │
-│  └────────┘  └──────────┘  └────────────┘  └───────────┘  │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      rustmetaverse (client)                              │
+│                                                                          │
+│  GridClient           PacketDispatcher       NetworkManager              │
+│  + login flow         + async handlers       + tokio UdpSocket           │
+│  + circuit code       + per-type registry    + actor pattern (mpsc)      │
+│  + handshake          + Pin<Box<Future>>    + sequence tracking          │
+│  + session state      + route by PacketType + reliable ack queue         │
+│                                                                          │
+│  Simulator: region | session_id | circuit_code | seed_capability         │
+├──────────────────────────────────────────────────────────────────────────┤
+│                    rustmetaverse_protocol (wire)                         │
+│                                                                          │
+│  Header               ZeroCoding             SafeBuf                     │
+│  + flags (app/ack)    + encode (compress)    + bounds-checked reads      │
+│  + frequency (low/    + expand (decompress)  + no panic on EOF           │
+│    med/high)          + round-trip tested    + returns io::Error         │
+│  + ack sequence no.                                                      │
+│                                                                          │
+│  Packets (~470 defs, auto-generated)                                     │
+│  + serialize/deserialize + typed blocks + PacketType enum                │
+├──────────────────────────────────────────────────────────────────────────┤
+│                 rustmetaverse_structured_data (LLSD)                     │
+│                                                                          │
+│  OSD enum                                   XML parser                   │
+│  + Boolean + Integer + Real + String        + LLSD <-> XML round-trip    │
+│  + UUID + Date + Array + Map(IndexMap)      + XML-RPC response parser    │
+│  + Default + Unknown                        + base64 binary decode       │
+├──────────────────────────────────────────────────────────────────────────┤
+│                    rustmetaverse_types (math)                            │
+│                                                                          │
+│  UUID               Vector3            Quaternion         utils          │
+│  + v4 generation    + add/sub/mul/div  + rotate            + PI / TWO_PI │
+│  + parse + format   + dot / cross      + normalize         + HALF_PI     │
+│  + ZERO constant    + length + dist    + slerp (TODO)      + clamp()     │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 | Crate | Responsibility | Status |
