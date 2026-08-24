@@ -1,19 +1,19 @@
 use crate::networking::network_manager::NetworkManager;
 use crate::simulator::Simulator;
+use futures::future::BoxFuture;
 use rustmetaverse_protocol::packets::{PacketType, WrappedPacket};
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-// Type alias for the async handler function
+// Single-box handler: Box<dyn Fn -> BoxFuture> instead of the previous
+// Box<dyn Fn -> Pin<Box<dyn Future>>> which allocated twice per dispatch.
 pub type PacketHandlerFn = Box<
     dyn Fn(
             WrappedPacket,
             Arc<NetworkManager>,
             Arc<Mutex<Option<Simulator>>>,
-        ) -> Pin<Box<dyn Future<Output = ()> + Send>>
+        ) -> BoxFuture<'static, ()>
         + Send
         + Sync,
 >;
@@ -41,11 +41,9 @@ impl PacketDispatcher {
             + Send
             + Sync
             + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: std::future::Future<Output = ()> + Send + 'static,
     {
-        let wrapped = Box::new(move |p, n, s| {
-            Box::pin(handler(p, n, s)) as Pin<Box<dyn Future<Output = ()> + Send>>
-        });
+        let wrapped = Box::new(move |p, n, s| Box::pin(handler(p, n, s)) as BoxFuture<'static, ()>);
         self.handlers.entry(packet_type).or_default().push(wrapped);
     }
 

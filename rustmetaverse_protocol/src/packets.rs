@@ -1583,7 +1583,7 @@ impl WrappedPacket {
     }
 }
 
-pub fn decode_packet(buf: &mut Bytes) -> Result<WrappedPacket, io::Error> {
+pub fn decode_packet(buf: Bytes) -> Result<WrappedPacket, io::Error> {
     // LLUDP zero coding starts immediately after the fixed six-byte packet
     // header. That includes the variable-length frequency/message-ID bytes.
     // Consequently we must expand the packet before Header::deserialize()
@@ -1597,7 +1597,8 @@ pub fn decode_packet(buf: &mut Bytes) -> Result<WrappedPacket, io::Error> {
         decoded_packet.extend_from_slice(&decoded_body);
         decoded_packet.freeze()
     } else {
-        buf.clone()
+        // Non-zerocoded: consume the caller's buffer directly. No clone.
+        buf
     };
 
     let header = Header::deserialize(&mut packet)?;
@@ -48054,7 +48055,7 @@ mod tests {
 
         let mut encoded = encoded.freeze();
         assert!(matches!(
-            decode_packet(&mut encoded),
+            decode_packet(encoded.clone()),
             Ok(WrappedPacket::DirFindQuery(_))
         ));
     }

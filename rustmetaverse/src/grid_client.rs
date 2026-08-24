@@ -308,10 +308,10 @@ impl GridClient {
                             }
                         }
 
-                        // Reuse the header_data clone that was already consumed
-                        // by Header::deserialize. decode_packet needs the full
-                        // packet (header + body), so use the original data.
-                        match rustmetaverse_protocol::packets::decode_packet(&mut data.clone()) {
+                        // decode_packet takes Bytes by value (no internal clone
+                        // on the non-zerocoded path). We pass a clone because
+                        // we still need the original data below for error logging.
+                        match rustmetaverse_protocol::packets::decode_packet(data.clone()) {
                             Ok(packet) => {
                                 log::trace!(
                                     "Decoded packet type: {:?} (seq {})",

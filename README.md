@@ -85,7 +85,7 @@ in Rust to gain:
 │  UUID               Vector3            Quaternion         utils          │
 │  + v4 generation    + add/sub/mul/div  + rotate            + PI / TWO_PI │
 │  + parse + format   + dot / cross      + normalize         + HALF_PI     │
-│  + ZERO constant    + length + dist    + slerp (TODO)      + clamp()     │
+│  + ZERO constant    + length + dist    + slerp            + clamp()     │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
