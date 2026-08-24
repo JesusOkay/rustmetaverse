@@ -197,4 +197,7 @@ independent implementation that shares no source code with any other project.
 
 ## License
 
-[BSD 3-Clause](LICENSE)
+Dual-licensed under MIT OR Apache-2.0.
+
+- [MIT License](LICENSE-MIT)
+- [Apache License 2.0](LICENSE-APACHE)
