@@ -1,0 +1,25 @@
+[workspace]
+members = [
+    "rustmetaverse_types",
+    "rustmetaverse_structured_data",
+    "rustmetaverse_protocol",
+    "rustmetaverse",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+license = "BSD-3-Clause"
+repository = "https://github.com/cinderblocks/rustmetaverse"
+authors = ["rustmetaverse contributors"]
+keywords = ["secondlife", "opensimulator", "virtual-world", "lludp", "protocol"]
+categories = ["network-programming", "games"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

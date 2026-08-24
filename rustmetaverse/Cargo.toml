@@ -1,0 +1,31 @@
+[package]
+name = "rustmetaverse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "A native Rust implementation of the Second Life / OpenSimulator virtual-world protocol"
+
+[dependencies]
+rustmetaverse_types = { path = "../rustmetaverse_types" }
+rustmetaverse_structured_data = { path = "../rustmetaverse_structured_data" }
+rustmetaverse_protocol = { path = "../rustmetaverse_protocol" }
+tokio = { version = "1.0", features = ["full"] }
+bytes = "1.7"
+thiserror = "1.0"
+log = "0.4"
+reqwest = { version = "0.12.24", features = ["json", "blocking"] }
+md5 = "0.8.0"
+indexmap = "2.12.1"
+xml-rs = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+urlencoding = "2.1"
+rand = "0.8"
+
+[dev-dependencies]
+rand = "0.8"

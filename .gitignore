@@ -1,0 +1,27 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# Backup files from code generation
+*.bak
+*.bak.*
+
+# Editor and IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Cargo lock is committed for the workspace but not for individual crate builds
+# (the workspace Cargo.lock is tracked; this line keeps accidental copies out)
+**/Cargo.lock.bak

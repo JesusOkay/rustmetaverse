@@ -1,0 +1,21 @@
+[package]
+name = "rustmetaverse_structured_data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "LLSD (Linden Lab Structured Data) XML serialization and parsing for rustmetaverse"
+
+[dependencies]
+rustmetaverse_types = { path = "../rustmetaverse_types" }
+serde = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+indexmap = { version = "2.0", features = ["serde"] }
+base64 = "0.21"
+uuid = { version = "1.10.0", features = ["v4", "serde"] }
+thiserror = "1.0"
+xml-rs = "0.8"
