@@ -26,13 +26,6 @@ handshake, LLUDP packet framing, zero-coding, and an async packet dispatcher —
 everything needed to build automated clients, bots, and tools that connect to
 SL or OpenSim grids.
 
-## What it is not
-
-This is **not** a port or fork of any existing library. It is a
-clean-room implementation in Rust with independent source code. The
-Second Life / OpenSimulator protocol is a public wire format; this project
-implements it directly.
-
 ## Why Rust?
 
 The Second Life / OpenSimulator protocol has been implemented in managed
