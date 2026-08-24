@@ -7,7 +7,7 @@ protocol.
 ## Getting started
 
 ```sh
-git clone https://github.com/cinderblocks/rustmetaverse.git
+git clone https://github.com/JesusOkay/rustmetaverse.git
 cd rustmetaverse
 cargo build --workspace
 cargo test --workspace
@@ -45,9 +45,9 @@ cargo test --workspace
 | Crate | Responsibility |
 |-------|---------------|
 | `rustmetaverse_types` | Foundational types: UUID, Vector3, Quaternion, math helpers |
-| `rustmetaverse_structured_data` | LLSD (Linden Lab Structured Data) XML serialization |
-| `rustmetaverse_protocol` | LLUDP wire format: packet header, zero-coding, packet definitions |
-| `rustmetaverse` | Client orchestration: login, networking, packet dispatch, session state |
+| `rustmetaverse_structured_data` | LLSD (Linden Lab Structured Data) XML, binary, and notation serialization |
+| `rustmetaverse_protocol` | LLUDP wire format: packet header, zero-coding, safe buffer reads, packet definitions |
+| `rustmetaverse` | Client orchestration: login, networking, reliable resend, movement, chat, IM, inventory, objects, groups, appearance, packet dispatch, session state |
 
 ## Reporting issues
 
@@ -59,5 +59,5 @@ Open a GitHub issue with a clear title and description. Include:
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the
-BSD 3-Clause license that covers the project.
+By contributing, you agree that your contributions will be dual-licensed
+under the MIT OR Apache-2.0 license that covers the project.

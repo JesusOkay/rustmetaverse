@@ -12,7 +12,7 @@ virtual-world clients — written from scratch in safe, async Rust to modernize
 the stack, eliminate runtime overhead, and bring memory safety and fearless
 concurrency to the metaverse protocol layer.
 
-![CI failing](https://img.shields.io/badge/CI-failing-red)
+[![CI](https://github.com/JesusOkay/rustmetaverse/actions/workflows/ci.yml/badge.svg)](https://github.com/JesusOkay/rustmetaverse/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 
@@ -146,7 +146,7 @@ in Rust to gain:
   (avatar health), `LogoutReply` (logout confirmation), `DisableSimulator`
   (region shutdown), `UUIDNameReply` (display name cache)
 - **GridClient API** — `login()`, `login_silent()`, `logout()`, `say()`,
-  `shout()`, `send_im()`, `rebake()`, `fetch_inventory_folder()`,
+  `shout()`, `whisper()`, `send_im()`, `rebake()`, `fetch_inventory_folder()`,
   `join_group()`, `leave_group()`, `start_movement_loop()`,
   `stop_movement_loop()`, `set_movement_flags()`
 
@@ -185,6 +185,18 @@ cargo run --release --example bot_scout -- \
     BotFirst BotLast BotPassword "Region Name" TargetFirst TargetLast
 ```
 
+### Full API test
+
+The `full_test` example exercises every public API function — chat (whisper,
+say, shout), IM, teleport lures, movement (agent update, movement, stop),
+object manipulation (create, name, description, delete, link, delink),
+inventory, groups, appearance, core handlers, and logout — in a single run
+against a live grid:
+
+```sh
+cargo run --release --example full_test -- BotFirst BotLast BotPassword
+```
+
 ### Minimal usage
 
 ```rust
@@ -192,7 +204,7 @@ use rustmetaverse::{GridClient, LoginParams};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = GridClient::new().await;
+    let client = GridClient::new().await?;
 
     let params = LoginParams {
         first_name: "BotFirst".to_string(),
@@ -231,8 +243,9 @@ rustmetaverse/
 
 The Second Life / OpenSimulator protocol is a public wire format documented
 by the community over many years. The [Firestorm](https://www.firestormviewer.org/)
-viewer's behavior was used to verify protocol details. This project is an
-independent implementation that shares no source code with any other project.
+viewer's behavior was used to verify protocol details. This project is a Rust
+rewrite that shares no source code with the C# libremetaverse / libopenmetaverse
+libraries.
 
 ## License
 
