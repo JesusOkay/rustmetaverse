@@ -8,13 +8,12 @@
 
 # rustmetaverse
 
-A modern Rust reimplementation of [LibreMetaverse](https://github.com/cinderblocks/libremetaverse)
-— the library for building Second Life / OpenSimulator virtual-world clients —
-rewritten from scratch in safe, async Rust to modernize the stack, eliminate
-runtime overhead, and bring memory safety and fearless concurrency to the
-metaverse protocol layer.
+A modern Rust client library for building Second Life / OpenSimulator
+virtual-world clients — written from scratch in safe, async Rust to modernize
+the stack, eliminate runtime overhead, and bring memory safety and fearless
+concurrency to the metaverse protocol layer.
 
-[![Build status](https://github.com/cinderblocks/rustmetaverse/actions/workflows/ci.yml/badge.svg)](https://github.com/cinderblocks/rustmetaverse/actions/workflows/ci.yml)
+[![Build status](https://github.com/JesusOkay/rustmetaverse/actions/workflows/ci.yml/badge.svg)](https://github.com/JesusOkay/rustmetaverse/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 
@@ -30,17 +29,16 @@ SL or OpenSim grids.
 
 ## What it is not
 
-This is **not** a fork of LibreMetaverse or libopenmetaverse. It is a
-clean-room reimplementation in Rust with no shared commit history. The lineage
-`libSecondLife → libOpenMetaverse → LibreMetaverse` is acknowledged as the
-reference implementation that documented the protocol; this project's code is
-independent.
+This is **not** a port or fork of any existing library. It is a
+clean-room implementation in Rust with independent source code. The
+Second Life / OpenSimulator protocol is a public wire format; this project
+implements it directly.
 
 ## Why Rust?
 
-LibreMetaverse and its predecessors are written in C#/.NET and have carried the
-protocol implementation for over two decades. rustmetaverse rewrites the same
-protocol layer in Rust to gain:
+The Second Life / OpenSimulator protocol has been implemented in managed
+languages for over two decades. rustmetaverse rewrites the same protocol layer
+in Rust to gain:
 
 - **Memory safety** — no GC pauses, no null-pointer dereferences, no buffer
   overflows. The protocol parser uses bounds-checked reads throughout.
@@ -188,11 +186,10 @@ rustmetaverse/
 
 ## Acknowledgements
 
-The Second Life / OpenSimulator protocol was documented by the communities
-behind `libSecondLife`, `libOpenMetaverse`, and `LibreMetaverse`. Those projects
-served as the reference for the LLUDP message template and the login sequence.
-The [Firestorm](https://www.firestormviewer.org/) viewer's behavior was used to
-verify protocol details. This project shares no source code with any of them.
+The Second Life / OpenSimulator protocol is a public wire format documented
+by the community over many years. The [Firestorm](https://www.firestormviewer.org/)
+viewer's behavior was used to verify protocol details. This project is an
+independent implementation that shares no source code with any other project.
 
 ## License
 
