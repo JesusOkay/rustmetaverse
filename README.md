@@ -57,8 +57,13 @@ in Rust to gain:
 │  GridClient           PacketDispatcher       NetworkManager              │
 │  + login flow         + async handlers       + tokio UdpSocket           │
 │  + circuit code       + per-type registry    + actor pattern (mpsc)      │
-│  + handshake          + Pin<Box<Future>>    + sequence tracking          │
+│  + handshake          + BoxFuture dispatch   + sequence tracking          │
 │  + session state      + route by PacketType + reliable ack queue         │
+│  + movement (AgentUpdate)                                                 │
+│                        reliability layer                                     │
+│                        + NeedAcks (selective repeat)                      │
+│                        + SRTT/RTTVAR adaptive RTO                          │
+│                        + resend loop (250 ms tick)                        │
 │                                                                          │
 │  Simulator: region | session_id | circuit_code | seed_capability         │
 ├──────────────────────────────────────────────────────────────────────────┤
@@ -75,10 +80,11 @@ in Rust to gain:
 ├──────────────────────────────────────────────────────────────────────────┤
 │                 rustmetaverse_structured_data (LLSD)                     │
 │                                                                          │
-│  OSD enum                                   XML parser                   │
-│  + Boolean + Integer + Real + String        + LLSD <-> XML round-trip    │
-│  + UUID + Date + Array + Map(IndexMap)      + XML-RPC response parser    │
-│  + Default + Unknown                        + base64 binary decode       │
+│  OSD enum                XML parser          Binary parser    Notation     │
+│  + Boolean + Integer     + LLSD <-> XML      + LLSD binary    + LLSD notation│
+│  + Real + String         + XML-RPC response  + round-trip     + round-trip │
+│  + UUID + Date + Array   + base64 decode     + big-endian     + text fmt   │
+│  + Map(IndexMap) + Binary                                                  │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                    rustmetaverse_types (math)                            │
 │                                                                          │
@@ -92,9 +98,9 @@ in Rust to gain:
 | Crate | Responsibility | Status |
 |-------|---------------|--------|
 | `rustmetaverse_types` | Foundational types: `UUID`, `Vector3`, `Quaternion`, math helpers | ✅ Stable |
-| `rustmetaverse_structured_data` | LLSD (Linden Lab Structured Data) XML serialization and parsing | ✅ Working |
+| `rustmetaverse_structured_data` | LLSD (Linden Lab Structured Data) XML, binary, and notation serialization | ✅ Working |
 | `rustmetaverse_protocol` | LLUDP wire format: packet header, zero-coding, safe buffer reads, packet definitions | ✅ Working |
-| `rustmetaverse` | Client orchestration: login, networking, packet dispatch, session state | ⚠️ Early |
+| `rustmetaverse` | Client orchestration: login, networking, reliable resend, movement, packet dispatch, session state | ⚠️ Early |
 
 ## Current status
 
@@ -104,19 +110,33 @@ in Rust to gain:
 - `CompleteAgentMovement` and `RegionHandshake` exchange
 - Ping/pong keepalive handling
 - Reliable packet acknowledgement tracking
+- **Reliable packet resend** — selective-repeat ARQ with SRTT/RTTVAR-based
+  adaptive RTO (clamped 250 ms–3 s), automatic resend with `MSG_RESENT` flag,
+  max 5 retries
 - Async packet dispatcher with per-type handler registration
 - LLUDP zero-coding (encode + expand, round-trip tested)
 - Bounds-checked packet parsing — no panics on malformed data
 - ~470 packet definitions generated from the LLUDP message template
+- **LLSD binary serialization** — `OSD::to_binary()` / `OSD::from_binary()`,
+  round-trip tested
+- **LLSD notation serialization** — `OSD::to_notation()` /
+  `OSD::from_notation()`, round-trip tested
+- **Avatar movement** — `AgentUpdate` with control flags (forward, backward,
+  strafe, turn, up/down, fly), camera vectors, body rotation
+
+### ⚠️ Partially implemented
+- Reliable resend covers all reliable packets; `UseCircuitCode` still has its
+  own dedicated retry loop for backward compatibility
+- Movement sends `AgentUpdate` packets; full movement loop (continuous
+  updates, physics integration, `AgentMovementComplete` handling) is not yet
+  wired into `GridClient`
 
 ### ❌ Missing / not yet implemented
 - Most packet handlers beyond the login/handshake sequence
-- Avatar movement and appearance
+- Avatar appearance (baked textures, wearables, outfit changes)
 - Inventory operations
 - Object manipulation (create, delete, modify, link)
 - Group and messaging features
-- Binary and notation LLSD formats (XML only)
-- Resent/retry logic for reliable packets (only `UseCircuitCode` retries today)
 - No published crates.io release yet
 
 ## Quick start

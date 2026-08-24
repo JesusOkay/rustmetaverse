@@ -44,24 +44,26 @@ impl GridClient {
         // reliable message. The login sequence specifically waits for the
         // UseCircuitCode acknowledgement before sending CompleteAgentMovement.
         let reliable_acks_handler = reliable_acks.clone();
-        dispatcher.add_handler(
-            PacketType::PacketAck,
-            move |packet, _network, _simulator| {
-                let reliable_acks = reliable_acks_handler.clone();
-                async move {
-                    let WrappedPacket::PacketAck(packet_ack) = packet else {
-                        return;
-                    };
+        dispatcher.add_handler(PacketType::PacketAck, move |packet, network, _simulator| {
+            let reliable_acks = reliable_acks_handler.clone();
+            async move {
+                let WrappedPacket::PacketAck(packet_ack) = packet else {
+                    return;
+                };
 
-                    let mut pending = reliable_acks.lock().await;
-                    for acknowledged in packet_ack.packets {
-                        if let Some(sender) = pending.remove(&acknowledged.i_d) {
-                            let _ = sender.send(());
-                        }
+                // Remove acknowledged packets from the resend queue.
+                let seqs: Vec<u32> = packet_ack.packets.iter().map(|p| p.i_d).collect();
+                network.need_acks.lock().await.ack_many(&seqs);
+
+                // Notify any callers waiting for a specific ack.
+                let mut pending = reliable_acks.lock().await;
+                for acknowledged in packet_ack.packets {
+                    if let Some(sender) = pending.remove(&acknowledged.i_d) {
+                        let _ = sender.send(());
                     }
                 }
-            },
-        );
+            }
+        });
 
         dispatcher.add_handler(
             PacketType::OpenCircuit,
@@ -281,6 +283,10 @@ impl GridClient {
                         };
 
                         if !header.acks.is_empty() {
+                            // Remove from the resend queue
+                            network.need_acks.lock().await.ack_many(&header.acks);
+
+                            // Notify any callers waiting for a specific ack
                             let mut pending = reliable_acks.lock().await;
                             for sequence in &header.acks {
                                 if let Some(sender) = pending.remove(sequence) {

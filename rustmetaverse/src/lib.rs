@@ -36,6 +36,7 @@
 
 pub mod grid_client;
 pub mod login;
+pub mod movement;
 pub mod networking;
 pub mod packet_dispatcher;
 pub mod simulator;
