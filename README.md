@@ -12,7 +12,7 @@ virtual-world clients — written from scratch in safe, async Rust to modernize
 the stack, eliminate runtime overhead, and bring memory safety and fearless
 concurrency to the metaverse protocol layer.
 
-[![Build status](https://github.com/JesusOkay/rustmetaverse/actions/workflows/ci.yml/badge.svg)](https://github.com/JesusOkay/rustmetaverse/actions/workflows/ci.yml)
+![CI failing](https://img.shields.io/badge/CI-failing-red)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 
