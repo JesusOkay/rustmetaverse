@@ -57,13 +57,17 @@ in Rust to gain:
 │  GridClient           PacketDispatcher       NetworkManager              │
 │  + login flow         + async handlers       + tokio UdpSocket           │
 │  + circuit code       + per-type registry    + actor pattern (mpsc)      │
-│  + handshake          + BoxFuture dispatch   + sequence tracking          │
+│  + handshake          + BoxFuture dispatch   + sequence tracking         │
 │  + session state      + route by PacketType + reliable ack queue         │
-│  + movement (AgentUpdate)                                                 │
-│                        reliability layer                                     │
-│                        + NeedAcks (selective repeat)                      │
-│                        + SRTT/RTTVAR adaptive RTO                          │
-│                        + resend loop (250 ms tick)                        │
+│  + logout + chat + IM                                                      │
+│                                                                          │
+│  Subsystems:                                                             │
+│  chat: ChatFromViewer/Simulator  messaging: ImprovedInstantMessage       │
+│  movement: AgentUpdate           appearance: RebakeAvatarTextures       │
+│  inventory: Fetch/Descendents    objects: Add/Delete/Link/Name          │
+│  groups: Join/Leave/Profile       core_handlers: Health/Movement/Logout  │
+│                                                                          │
+│  reliability layer: NeedAcks + SRTT/RTTVAR RTO + resend loop (250ms)     │
 │                                                                          │
 │  Simulator: region | session_id | circuit_code | seed_capability         │
 ├──────────────────────────────────────────────────────────────────────────┤
@@ -100,7 +104,7 @@ in Rust to gain:
 | `rustmetaverse_types` | Foundational types: `UUID`, `Vector3`, `Quaternion`, math helpers | ✅ Stable |
 | `rustmetaverse_structured_data` | LLSD (Linden Lab Structured Data) XML, binary, and notation serialization | ✅ Working |
 | `rustmetaverse_protocol` | LLUDP wire format: packet header, zero-coding, safe buffer reads, packet definitions | ✅ Working |
-| `rustmetaverse` | Client orchestration: login, networking, reliable resend, movement, packet dispatch, session state | ⚠️ Early |
+| `rustmetaverse` | Client orchestration: login, networking, reliable resend, movement, chat, IM, inventory, objects, groups, appearance, packet dispatch, session state | ✅ Working |
 
 ## Current status
 
@@ -123,20 +127,38 @@ in Rust to gain:
   `OSD::from_notation()`, round-trip tested
 - **Avatar movement** — `AgentUpdate` with control flags (forward, backward,
   strafe, turn, up/down, fly), camera vectors, body rotation
+- **Local chat** — `ChatFromViewer` (say, shout, whisper) on any channel;
+  `ChatFromSimulator` parsing for incoming messages
+- **Instant messaging** — `ImprovedInstantMessage` for private IMs, teleport
+  lures, friendship offers; full dialog type constants
+- **Avatar appearance** — `RebakeAvatarTextures` request; `AvatarAppearance`
+  packet parsing (sender, texture entry, visual params, attachments)
+- **Inventory operations** — `FetchInventoryDescendents` request with
+  sort/fetch flags; `InventoryDescendents` parsing into typed folders and
+  items; item/asset type constants
+- **Object manipulation** — create prims (`ObjectAdd` with P-code, material,
+  raycast), delete (`ObjectDelete` with force flag), link/delink
+  (`ObjectLink`/`ObjectDelink`), set name/description (`ObjectName`/
+  `ObjectDescription`)
+- **Group operations** — join (`JoinGroupRequest`), leave
+  (`LeaveGroupRequest`), parse replies (`JoinGroupReply`,
+  `LeaveGroupReply`), profile parsing (`GroupProfileReply`)
+- **Core packet handlers** — `AgentMovementComplete` (avatar position),
+  `ChatFromSimulator` (local chat), `HealthMessage` (avatar health),
+  `LogoutReply` (logout confirmation), `DisableSimulator` (region shutdown),
+  `UUIDNameReply` (display name cache)
+- **GridClient API** — `logout()`, `say()`, `shout()`, `send_im()`,
+  `rebake()`, `fetch_inventory_folder()`, `join_group()`, `leave_group()`
 
 ### ⚠️ Partially implemented
 - Reliable resend covers all reliable packets; `UseCircuitCode` still has its
   own dedicated retry loop for backward compatibility
-- Movement sends `AgentUpdate` packets; full movement loop (continuous
-  updates, physics integration, `AgentMovementComplete` handling) is not yet
-  wired into `GridClient`
+- Movement sends `AgentUpdate` packets; continuous movement loop not yet
+  wired into `GridClient` (caller must drive `send_agent_update` ~10×/s)
+- `AgentMovementComplete` is captured into `core_state.avatar_position` but
+  not yet used to drive automatic movement
 
 ### ❌ Missing / not yet implemented
-- Most packet handlers beyond the login/handshake sequence
-- Avatar appearance (baked textures, wearables, outfit changes)
-- Inventory operations
-- Object manipulation (create, delete, modify, link)
-- Group and messaging features
 - No published crates.io release yet
 
 ## Quick start

@@ -1,3 +1,4 @@
+use crate::core_handlers::CoreState;
 use crate::login::{login, LoginParams};
 use crate::networking::network_manager::NetworkManager;
 use crate::packet_dispatcher::PacketDispatcher;
@@ -7,10 +8,10 @@ use rustmetaverse_protocol::header::{Header, PacketFrequency};
 use rustmetaverse_protocol::packets::{
     AgentHeightWidthAgentDataBlock, AgentHeightWidthHeightWidthBlockBlock, AgentHeightWidthPacket,
     CompleteAgentMovementAgentDataBlock, CompleteAgentMovementPacket, CompletePingCheckPacket,
-    CompletePingCheckPingIDBlock, PacketAckPacket, PacketAckPacketsBlock, PacketType,
-    RegionHandshakeReplyAgentDataBlock, RegionHandshakeReplyPacket,
-    RegionHandshakeReplyRegionInfoBlock, UseCircuitCodeCircuitCodeBlock, UseCircuitCodePacket,
-    WrappedPacket,
+    CompletePingCheckPingIDBlock, LogoutRequestAgentDataBlock, LogoutRequestPacket,
+    PacketAckPacket, PacketAckPacketsBlock, PacketType, RegionHandshakeReplyAgentDataBlock,
+    RegionHandshakeReplyPacket, RegionHandshakeReplyRegionInfoBlock,
+    UseCircuitCodeCircuitCodeBlock, UseCircuitCodePacket, WrappedPacket,
 };
 use rustmetaverse_types::UUID;
 use std::collections::HashMap;
@@ -28,6 +29,8 @@ pub struct GridClient {
     pub dispatcher: Arc<PacketDispatcher>,
     /// Set once the simulator has acknowledged the UDP circuit with a region handshake.
     pub region_ready: Arc<AtomicBool>,
+    /// Shared state populated by core packet handlers.
+    pub core_state: Arc<CoreState>,
     reliable_acks: Arc<Mutex<HashMap<u32, oneshot::Sender<()>>>>,
     network_loop_started: AtomicBool,
 }
@@ -39,6 +42,8 @@ impl GridClient {
         let region_ready = Arc::new(AtomicBool::new(false));
         let reliable_acks: Arc<Mutex<HashMap<u32, oneshot::Sender<()>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        // Create the simulator handle up front so handlers can capture it.
+        let simulator: Arc<Mutex<Option<Simulator>>> = Arc::new(Mutex::new(None));
 
         // Firestorm's message system tracks the acknowledgements for every
         // reliable message. The login sequence specifically waits for the
@@ -218,11 +223,86 @@ impl GridClient {
             },
         );
 
+        // ── Core packet handlers ────────────────────────────────────────
+
+        let core_state = CoreState::new();
+
+        // AgentMovementComplete — avatar position after entering a region
+        let mc_state = core_state.clone();
+        let mc_simulator = simulator.clone();
+        dispatcher.add_handler(
+            PacketType::AgentMovementComplete,
+            move |packet, _network, _simulator| {
+                let state = mc_state.clone();
+                let sim = mc_simulator.clone();
+                async move {
+                    crate::core_handlers::handle_agent_movement_complete(&packet, state, sim).await;
+                }
+            },
+        );
+
+        // ChatFromSimulator — local chat
+        dispatcher.add_handler(
+            PacketType::ChatFromSimulator,
+            move |packet, _network, _simulator| async move {
+                crate::core_handlers::handle_chat_from_simulator(&packet).await;
+            },
+        );
+
+        // HealthMessage — avatar health
+        let health_state = core_state.clone();
+        dispatcher.add_handler(
+            PacketType::HealthMessage,
+            move |packet, _network, _simulator| {
+                let state = health_state.clone();
+                async move {
+                    crate::core_handlers::handle_health_message(&packet, state).await;
+                }
+            },
+        );
+
+        // LogoutReply — logout confirmation
+        let logout_state = core_state.clone();
+        dispatcher.add_handler(
+            PacketType::LogoutReply,
+            move |packet, _network, _simulator| {
+                let state = logout_state.clone();
+                async move {
+                    crate::core_handlers::handle_logout_reply(&packet, state).await;
+                }
+            },
+        );
+
+        // DisableSimulator — simulator shutting down
+        let disable_state = core_state.clone();
+        dispatcher.add_handler(
+            PacketType::DisableSimulator,
+            move |_packet, _network, _simulator| {
+                let state = disable_state.clone();
+                async move {
+                    crate::core_handlers::handle_disable_simulator(state).await;
+                }
+            },
+        );
+
+        // UUIDNameReply — display name resolution
+        let name_state = core_state.clone();
+        dispatcher.add_handler(
+            PacketType::UUIDNameReply,
+            move |packet, _network, _simulator| {
+                let state = name_state.clone();
+                async move {
+                    crate::core_handlers::handle_uuid_name_reply(&packet, state).await;
+                }
+            },
+        );
+
         Ok(Self {
             network: Arc::new(network),
-            simulator: Arc::new(Mutex::new(None)),
+            simulator,
             dispatcher: Arc::new(dispatcher),
             region_ready,
+            core_state,
             reliable_acks,
             network_loop_started: AtomicBool::new(false),
         })
@@ -520,5 +600,90 @@ impl GridClient {
         }
 
         Ok(())
+    }
+
+    /// Disconnect from the simulator by sending `LogoutRequest`.
+    ///
+    /// After calling this, the `LogoutReply` handler sets
+    /// `core_state.logout_confirmed` to `true`.
+    pub async fn logout(&self) -> Result<(), std::io::Error> {
+        let (agent_id, session_id) = {
+            let sim = self.simulator.lock().await;
+            if let Some(s) = sim.as_ref() {
+                (s.client, s.session_id)
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "No simulator connected",
+                ));
+            }
+        };
+
+        let seq = self.network.get_next_sequence();
+        let mut packet = LogoutRequestPacket {
+            header: Header {
+                frequency: PacketFrequency::Low,
+                id: 252,
+                reliable: true,
+                sequence: seq,
+                ..Default::default()
+            },
+            agent_data: LogoutRequestAgentDataBlock {
+                agent_i_d: agent_id,
+                session_i_d: session_id,
+            },
+        };
+
+        self.network.send_packet(&mut packet).await?;
+        log::info!("Sent LogoutRequest");
+        Ok(())
+    }
+
+    /// Send local chat on channel 0.
+    pub async fn say(&self, message: &str) -> Result<(), std::io::Error> {
+        crate::chat::say(&self.network, &self.simulator, message).await
+    }
+
+    /// Send local chat on channel 0 with shout volume.
+    pub async fn shout(&self, message: &str) -> Result<(), std::io::Error> {
+        crate::chat::shout(&self.network, &self.simulator, message).await
+    }
+
+    /// Send a private instant message to another agent.
+    pub async fn send_im(&self, target_id: UUID, message: &str) -> Result<(), std::io::Error> {
+        crate::messaging::send_private_im(&self.network, &self.simulator, target_id, message).await
+    }
+
+    /// Request the simulator to rebake avatar textures.
+    pub async fn rebake(&self, texture_id: UUID) -> Result<(), std::io::Error> {
+        crate::appearance::request_rebake(&self.network, &self.simulator, texture_id).await
+    }
+
+    /// Fetch the contents of an inventory folder.
+    pub async fn fetch_inventory_folder(
+        &self,
+        folder_id: UUID,
+        owner_id: UUID,
+    ) -> Result<(), std::io::Error> {
+        crate::inventory::fetch_folder(
+            &self.network,
+            &self.simulator,
+            folder_id,
+            owner_id,
+            crate::inventory::SORT_ORDER_BY_NAME,
+            true,
+            true,
+        )
+        .await
+    }
+
+    /// Join a group by its UUID.
+    pub async fn join_group(&self, group_id: UUID) -> Result<(), std::io::Error> {
+        crate::groups::join_group(&self.network, &self.simulator, group_id).await
+    }
+
+    /// Leave a group by its UUID.
+    pub async fn leave_group(&self, group_id: UUID) -> Result<(), std::io::Error> {
+        crate::groups::leave_group(&self.network, &self.simulator, group_id).await
     }
 }

@@ -13,6 +13,16 @@
 //! - [`Simulator`]: session state for the connected region (agent ID,
 //!   session ID, circuit code, seed capability).
 //!
+//! ## Subsystems
+//!
+//! - [`chat`]: local chat (ChatFromViewer / ChatFromSimulator)
+//! - [`messaging`]: instant messaging (ImprovedInstantMessage)
+//! - [`movement`]: avatar movement (AgentUpdate with control flags)
+//! - [`appearance`]: avatar appearance (rebake, AvatarAppearance parsing)
+//! - [`inventory`]: inventory operations (FetchInventoryDescendents)
+//! - [`objects`]: object manipulation (create, delete, link, rename)
+//! - [`groups`]: group operations (join, leave, profile)
+//!
 //! ## Example
 //!
 //! ```no_run
@@ -34,10 +44,17 @@
 //! # }
 //! ```
 
+pub mod appearance;
+pub mod chat;
+pub mod core_handlers;
 pub mod grid_client;
+pub mod groups;
+pub mod inventory;
 pub mod login;
+pub mod messaging;
 pub mod movement;
 pub mod networking;
+pub mod objects;
 pub mod packet_dispatcher;
 pub mod simulator;
 
