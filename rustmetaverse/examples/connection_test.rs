@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // --- Login ------------------------------------------------------------
 
-    let client = GridClient::new().await;
+    let client = GridClient::new().await?;
 
     let params = LoginParams {
         first_name: first_name.clone(),

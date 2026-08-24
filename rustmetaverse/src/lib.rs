@@ -20,7 +20,7 @@
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-//! let client = GridClient::new().await;
+//! let client = GridClient::new().await?;
 //! let params = LoginParams {
 //!     first_name: "BotFirst".to_string(),
 //!     last_name: "BotLast".to_string(),

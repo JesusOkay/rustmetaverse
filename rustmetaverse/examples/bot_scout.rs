@@ -346,7 +346,7 @@ async fn scan_region(
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     eprintln!();
     eprintln!(
         "{}{}================================================================================",
@@ -373,7 +373,7 @@ async fn main() {
             "  {} bot1 Resident password123 \"Help Island\" John Resident",
             args[0]
         );
-        return;
+        return Ok(());
     }
 
     let bot_first = args[1].clone();
@@ -396,7 +396,7 @@ async fn main() {
 
     eprintln!("{}[CONNECT]{} Logging in...", CYAN, RESET);
 
-    let client = GridClient::new().await;
+    let client = GridClient::new().await?;
 
     // Register the nearby-avatar handlers before login. The initial coarse
     // update can arrive while the region handshake is still in progress.
@@ -472,7 +472,7 @@ async fn main() {
     match timeout(LOGIN_TIMEOUT, client.login_silent(&params, LOGIN_URI)).await {
         Err(_) => {
             eprintln!("{}[FAIL]{} Login timeout", RED, RESET);
-            return;
+            return Ok(());
         }
         Ok(Err(e)) => {
             let error = e.to_string();
@@ -486,7 +486,7 @@ async fn main() {
                     "          This is not a password, region, or content-access error. Check the network path and the grid's client-access policy."
                 );
             }
-            return;
+            return Ok(());
         }
         Ok(Ok(())) => {
             eprintln!("{}[OK]{} Connected", GREEN, RESET);
@@ -502,7 +502,7 @@ async fn main() {
             }
             None => {
                 eprintln!("{}[ERROR]{} No simulator", RED, RESET);
-                return;
+                return Ok(());
             }
         }
     };
@@ -518,7 +518,7 @@ async fn main() {
     {
         Err(_) => {
             eprintln!("{}[TIMEOUT]{} Region handshake failed", RED, RESET);
-            return;
+            return Ok(());
         }
         Ok(()) => {
             eprintln!("{}[OK]{} Region ready", GREEN, RESET);
@@ -559,7 +559,7 @@ async fn main() {
                 "{}[FAIL]{} Could not set content access: {}",
                 RED, RESET, error
             );
-            return;
+            return Ok(());
         }
     }
 
@@ -590,4 +590,6 @@ async fn main() {
             );
         }
     }
+
+    Ok(())
 }

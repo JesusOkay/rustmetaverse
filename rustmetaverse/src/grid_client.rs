@@ -33,8 +33,8 @@ pub struct GridClient {
 }
 
 impl GridClient {
-    pub async fn new() -> Self {
-        let network = NetworkManager::new("0.0.0.0:0").await.unwrap();
+    pub async fn new() -> Result<Self, std::io::Error> {
+        let network = NetworkManager::new("0.0.0.0:0").await?;
         let mut dispatcher = PacketDispatcher::new();
         let region_ready = Arc::new(AtomicBool::new(false));
         let reliable_acks: Arc<Mutex<HashMap<u32, oneshot::Sender<()>>>> =
@@ -216,16 +216,15 @@ impl GridClient {
             },
         );
 
-        Self {
+        Ok(Self {
             network: Arc::new(network),
             simulator: Arc::new(Mutex::new(None)),
             dispatcher: Arc::new(RwLock::new(dispatcher)),
             region_ready,
             reliable_acks,
             network_loop_started: AtomicBool::new(false),
-        }
+        })
     }
-
     pub async fn start_network_loop(&self) {
         if self.network_loop_started.swap(true, Ordering::AcqRel) {
             return;
@@ -243,95 +242,78 @@ impl GridClient {
                 match socket.recv(&mut buf).await {
                     Ok(len) => {
                         log::trace!("Received {} network bytes", len);
-                        // Minimum packet size: header is at least 7 bytes. Skip truncated packets.
                         if len < 7 {
                             log::debug!("Skipping truncated packet: {} bytes", len);
                             continue;
                         }
                         let data = Bytes::copy_from_slice(&buf[..len]);
-                        let network_clone = network.clone();
-                        let simulator_clone = simulator.clone();
-                        let dispatcher_clone = dispatcher.clone();
-                        let reliable_acks_clone = reliable_acks.clone();
 
-                        tokio::spawn(async move {
-                            // LLUDP reliable packets must be acknowledged. Firestorm's
-                            // message system handles this automatically; do it before
-                            // dispatching so directory and handshake replies are retained.
-                            //
-                            // Header::deserialize and decode_packet both return Result
-                            // and perform bounds-checked reads, so a malformed or
-                            // truncated packet produces a structured error rather than
-                            // a panic.
-                            let mut header_data = data.clone();
-                            let header = match Header::deserialize(&mut header_data) {
-                                Ok(h) => h,
-                                Err(e) => {
-                                    log::debug!(
-                                        "Malformed packet header: {} (first bytes: {:02x?})",
-                                        e,
-                                        data.iter().take(10).collect::<Vec<_>>()
-                                    );
-                                    return;
+                        let mut header_data = data.clone();
+                        let header = match Header::deserialize(&mut header_data) {
+                            Ok(h) => h,
+                            Err(e) => {
+                                log::debug!(
+                                    "Malformed packet header: {} (first bytes: {:02x?})",
+                                    e,
+                                    data.iter().take(10).collect::<Vec<_>>()
+                                );
+                                continue;
+                            }
+                        };
+
+                        if !header.acks.is_empty() {
+                            let mut pending = reliable_acks.lock().await;
+                            for sequence in &header.acks {
+                                if let Some(sender) = pending.remove(sequence) {
+                                    let _ = sender.send(());
                                 }
+                            }
+                        }
+
+                        if header.reliable {
+                            let mut acknowledgement = PacketAckPacket {
+                                header: Header {
+                                    frequency: PacketFrequency::Low,
+                                    id: 65531,
+                                    sequence: network.get_next_sequence(),
+                                    ..Default::default()
+                                },
+                                packets: vec![PacketAckPacketsBlock {
+                                    i_d: header.sequence,
+                                }],
                             };
-
-                            // An acknowledgement can be appended to any incoming
-                            // message, not just PacketAck.
-                            if !header.acks.is_empty() {
-                                let mut pending = reliable_acks_clone.lock().await;
-                                for sequence in &header.acks {
-                                    if let Some(sender) = pending.remove(sequence) {
-                                        let _ = sender.send(());
-                                    }
-                                }
+                            if let Err(error) =
+                                network.send_packet(&mut acknowledgement).await
+                            {
+                                log::debug!("Could not acknowledge reliable packet: {error}");
                             }
+                        }
 
-                            if header.reliable {
-                                let mut acknowledgement = PacketAckPacket {
-                                    header: Header {
-                                        frequency: PacketFrequency::Low,
-                                        id: 65531,
-                                        sequence: network_clone.get_next_sequence(),
-                                        ..Default::default()
-                                    },
-                                    packets: vec![PacketAckPacketsBlock {
-                                        i_d: header.sequence,
-                                    }],
-                                };
-                                if let Err(error) =
-                                    network_clone.send_packet(&mut acknowledgement).await
-                                {
-                                    log::debug!("Could not acknowledge reliable packet: {error}");
-                                }
+                        let mut data_mut = data.clone();
+                        match rustmetaverse_protocol::packets::decode_packet(&mut data_mut) {
+                            Ok(packet) => {
+                                log::trace!(
+                                    "Decoded packet type: {:?} (seq {})",
+                                    packet.packet_type(),
+                                    header.sequence
+                                );
+                                let dispatch = dispatcher.read().await;
+                                dispatch
+                                    .dispatch(packet, network.clone(), simulator.clone())
+                                    .await;
                             }
-
-                            let mut data_mut = data.clone();
-                            match rustmetaverse_protocol::packets::decode_packet(&mut data_mut) {
-                                Ok(packet) => {
-                                    log::trace!(
-                                        "Decoded packet type: {:?} (seq {})",
-                                        packet.packet_type(),
-                                        header.sequence
-                                    );
-                                    let dispatch = dispatcher_clone.read().await;
-                                    dispatch
-                                        .dispatch(packet, network_clone, simulator_clone)
-                                        .await;
-                                }
-                                Err(e) => {
-                                    log::debug!(
-                                        "Error decoding packet (seq {}): {} (first bytes: {:02x?})",
-                                        header.sequence,
-                                        e,
-                                        data.iter().take(10).collect::<Vec<_>>()
-                                    );
-                                }
+                            Err(e) => {
+                                log::debug!(
+                                    "Error decoding packet (seq {}): {} (first bytes: {:02x?})",
+                                    header.sequence,
+                                    e,
+                                    data.iter().take(10).collect::<Vec<_>>()
+                                );
                             }
-                        });
+                        }
                     }
                     Err(e) => {
-                        eprintln!("Network error: {}", e);
+                        log::error!("Network error: {}", e);
                         break;
                     }
                 }

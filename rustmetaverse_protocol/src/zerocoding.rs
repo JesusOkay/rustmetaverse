@@ -5,7 +5,7 @@ use std::io;
 const LLUDP_PACKET_HEADER_SIZE: usize = 6;
 
 pub fn expand_zerocoded(data: &mut Bytes) -> Result<Bytes, io::Error> {
-    let mut output = BytesMut::with_capacity(data.len() * 2); // Heuristic
+    let mut output = BytesMut::with_capacity(data.len()); // Worst case: no compression
 
     while data.has_remaining() {
         let byte = data.get_u8();

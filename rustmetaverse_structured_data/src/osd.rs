@@ -72,6 +72,35 @@ impl OSD {
         }
     }
 
+    pub fn as_uuid(&self) -> Option<UUID> {
+        match self {
+            OSD::UUID(v) => Some(*v),
+            OSD::String(v) => UUID::parse(v).ok(),
+            _ => None,
+        }
+    }
+
+    pub fn as_date(&self) -> Option<&DateTime<Utc>> {
+        match self {
+            OSD::Date(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_binary(&self) -> Option<&Vec<u8>> {
+        match self {
+            OSD::Binary(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_uri(&self) -> Option<&String> {
+        match self {
+            OSD::Uri(v) => Some(v),
+            _ => None,
+        }
+    }
+
     pub fn as_map(&self) -> Option<&IndexMap<String, OSD>> {
         match self {
             OSD::Map(m) => Some(m),
@@ -93,8 +122,19 @@ impl OSD {
         }
     }
 
+    pub fn as_array_mut(&mut self) -> Option<&mut Vec<OSD>> {
+        match self {
+            OSD::Array(a) => Some(a),
+            _ => None,
+        }
+    }
+
+    pub fn is_undef(&self) -> bool {
+        matches!(self, OSD::Undef)
+    }
+
     pub fn to_xml(&self) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(256);
         output.push_str("<llsd>");
         self.write_xml(&mut output);
         output.push_str("</llsd>");
@@ -102,26 +142,47 @@ impl OSD {
     }
 
     fn write_xml(&self, output: &mut String) {
+        use std::fmt::Write;
         match self {
-            OSD::Boolean(v) => output.push_str(&format!(
-                "<boolean>{}</boolean>",
-                if *v { "1" } else { "0" }
-            )),
-            OSD::Integer(v) => output.push_str(&format!("<integer>{}</integer>", v)),
-            OSD::Real(v) => output.push_str(&format!("<real>{}</real>", v)),
-            OSD::String(v) => output.push_str(&format!("<string>{}</string>", Self::escape_xml(v))),
-            OSD::UUID(v) => output.push_str(&format!("<uuid>{}</uuid>", v)),
-            OSD::Date(v) => output.push_str(&format!("<date>{}</date>", v.to_rfc3339())),
-            OSD::Uri(v) => output.push_str(&format!("<uri>{}</uri>", Self::escape_xml(v))),
+            OSD::Boolean(v) => {
+                output.push_str("<boolean>");
+                output.push_str(if *v { "1" } else { "0" });
+                output.push_str("</boolean>");
+            }
+            OSD::Integer(v) => {
+                let _ = write!(output, "<integer>{}</integer>", v);
+            }
+            OSD::Real(v) => {
+                let _ = write!(output, "<real>{}</real>", v);
+            }
+            OSD::String(v) => {
+                output.push_str("<string>");
+                Self::escape_xml_into(v, output);
+                output.push_str("</string>");
+            }
+            OSD::UUID(v) => {
+                let _ = write!(output, "<uuid>{}</uuid>", v);
+            }
+            OSD::Date(v) => {
+                let _ = write!(output, "<date>{}</date>", v.to_rfc3339());
+            }
+            OSD::Uri(v) => {
+                output.push_str("<uri>");
+                Self::escape_xml_into(v, output);
+                output.push_str("</uri>");
+            }
             OSD::Binary(v) => {
                 use base64::{engine::general_purpose, Engine as _};
-                let encoded = general_purpose::STANDARD.encode(v);
-                output.push_str(&format!("<binary>{}</binary>", encoded));
+                output.push_str("<binary>");
+                general_purpose::STANDARD.encode_string(v, output);
+                output.push_str("</binary>");
             }
             OSD::Map(m) => {
                 output.push_str("<map>");
                 for (k, v) in m {
-                    output.push_str(&format!("<key>{}</key>", Self::escape_xml(k)));
+                    output.push_str("<key>");
+                    Self::escape_xml_into(k, output);
+                    output.push_str("</key>");
                     v.write_xml(output);
                 }
                 output.push_str("</map>");
@@ -137,12 +198,22 @@ impl OSD {
         }
     }
 
-    fn escape_xml(s: &str) -> String {
-        s.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&apos;")
+    fn escape_xml_into(s: &str, output: &mut String) {
+        // Preallocate roughly; most strings have no special chars.
+        if !s.contains(['&', '<', '>', '"', '\'']) {
+            output.push_str(s);
+            return;
+        }
+        for c in s.chars() {
+            match c {
+                '&' => output.push_str("&amp;"),
+                '<' => output.push_str("&lt;"),
+                '>' => output.push_str("&gt;"),
+                '"' => output.push_str("&quot;"),
+                '\'' => output.push_str("&apos;"),
+                _ => output.push(c),
+            }
+        }
     }
 }
 

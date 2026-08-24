@@ -26,7 +26,7 @@ impl NetworkManager {
         tokio::spawn(async move {
             while let Some(data) = rx.recv().await {
                 if let Err(e) = socket_clone.send(&data).await {
-                    eprintln!("Error sending packet: {}", e);
+                    log::error!("Error sending packet: {}", e);
                 }
             }
         });
@@ -48,10 +48,9 @@ impl NetworkManager {
     }
 
     pub async fn send_packet<P: Packet>(&self, packet: &mut P) -> Result<(), io::Error> {
-        let mut buf = BytesMut::with_capacity(4096);
+        let mut buf = BytesMut::with_capacity(1024);
         packet.serialize(&mut buf);
 
-        // Send to the channel instead of locking the socket
         self.tx_sender
             .send(buf)
             .await
