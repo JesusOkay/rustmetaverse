@@ -13,7 +13,7 @@ the stack, eliminate runtime overhead, and bring memory safety and fearless
 concurrency to the metaverse protocol layer.
 
 [![Build status](https://github.com/JesusOkay/rustmetaverse/actions/workflows/ci.yml/badge.svg)](https://github.com/JesusOkay/rustmetaverse/actions/workflows/ci.yml)
-[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 
 ---
