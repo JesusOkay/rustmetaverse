@@ -13,15 +13,21 @@ use rustmetaverse_protocol::packets::{
     RegionHandshakeReplyPacket, RegionHandshakeReplyRegionInfoBlock,
     UseCircuitCodeCircuitCodeBlock, UseCircuitCodePacket, WrappedPacket,
 };
-use rustmetaverse_types::UUID;
+use rustmetaverse_types::{Quaternion, Vector3, UUID};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
 
-const USE_CIRCUIT_CODE_RETRIES: usize = 3;
-const USE_CIRCUIT_CODE_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(5);
+/// Timeout for the UseCircuitCode acknowledgement. The reliable-resend layer
+/// (250 ms poll interval, SRTT/RTTVAR-based RTO clamped to 250 ms–3 s, max 5
+/// resends) handles retransmission automatically, so we only need a single
+/// generous timeout to cover worst-case 5 resends + network latency.
+const USE_CIRCUIT_CODE_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(15);
+
+/// AgentUpdate send interval (~10 Hz, matching the viewer cadence).
+const MOVEMENT_TICK: tokio::time::Duration = tokio::time::Duration::from_millis(100);
 
 pub struct GridClient {
     pub network: Arc<NetworkManager>,
@@ -31,8 +37,15 @@ pub struct GridClient {
     pub region_ready: Arc<AtomicBool>,
     /// Shared state populated by core packet handlers.
     pub core_state: Arc<CoreState>,
+    /// Shared movement state — set `control_flags` to drive the avatar.
+    /// The movement loop reads this every tick and sends AgentUpdate at ~10 Hz.
+    /// Set to `CONTROL_STOP` (0x00400000) to stop all movement.
+    pub movement_flags: Arc<std::sync::atomic::AtomicU32>,
+    /// Set to true to terminate the movement loop.
+    movement_stop: Arc<AtomicBool>,
     reliable_acks: Arc<Mutex<HashMap<u32, oneshot::Sender<()>>>>,
     network_loop_started: AtomicBool,
+    movement_loop_started: AtomicBool,
 }
 
 impl GridClient {
@@ -303,8 +316,13 @@ impl GridClient {
             dispatcher: Arc::new(dispatcher),
             region_ready,
             core_state,
+            movement_flags: Arc::new(std::sync::atomic::AtomicU32::new(
+                crate::movement::CONTROL_STOP,
+            )),
+            movement_stop: Arc::new(AtomicBool::new(false)),
             reliable_acks,
             network_loop_started: AtomicBool::new(false),
+            movement_loop_started: AtomicBool::new(false),
         })
     }
 
@@ -423,6 +441,89 @@ impl GridClient {
                 }
             }
         });
+    }
+
+    /// Start the continuous movement loop — sends `AgentUpdate` at ~10 Hz,
+    /// using the avatar position from `AgentMovementComplete` as the camera
+    /// center and the shared `movement_flags` for control flags.
+    ///
+    /// This is started automatically by [`login()`](Self::login). Call
+    /// [`stop_movement_loop()`](Self::stop_movement_loop) to terminate it.
+    ///
+    /// The loop is idempotent — calling it twice is a no-op.
+    pub async fn start_movement_loop(&self) {
+        if self.movement_loop_started.swap(true, Ordering::AcqRel) {
+            return;
+        }
+
+        let network = self.network.clone();
+        let simulator = self.simulator.clone();
+        let core_state = self.core_state.clone();
+        let movement_flags = self.movement_flags.clone();
+        let movement_stop = self.movement_stop.clone();
+
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(MOVEMENT_TICK);
+            ticker.tick().await; // skip first immediate tick
+            loop {
+                if movement_stop.load(Ordering::Acquire) {
+                    break;
+                }
+                ticker.tick().await;
+
+                // Skip if no simulator is connected.
+                {
+                    let sim = simulator.lock().await;
+                    if sim.is_none() {
+                        continue;
+                    }
+                }
+
+                // Use the latest known avatar position from
+                // AgentMovementComplete as the camera center. If we haven't
+                // received it yet, default to origin.
+                let camera_center = {
+                    let pos = core_state.avatar_position.read().await;
+                    pos.position
+                };
+                let camera_at_axis = Vector3::new(1.0, 0.0, 0.0);
+
+                let control_flags = movement_flags.load(Ordering::Acquire);
+
+                // If control_flags is CONTROL_STOP, we still send AgentUpdate
+                // with the STOP flag — this tells the simulator to halt the
+                // avatar. The viewer does the same: it never stops sending
+                // AgentUpdate, it just sends with CONTROL_STOP when idle.
+                if let Err(e) = crate::movement::send_movement(
+                    &network,
+                    &simulator,
+                    control_flags,
+                    Quaternion::IDENTITY,
+                    camera_center,
+                    camera_at_axis,
+                )
+                .await
+                {
+                    log::debug!("Movement loop send error: {e}");
+                }
+            }
+        });
+    }
+
+    /// Stop the movement loop (started by `start_movement_loop`).
+    /// This does NOT send a final AgentUpdate with CONTROL_STOP — the
+    /// simulator will time out the avatar on its own.
+    pub fn stop_movement_loop(&self) {
+        self.movement_stop.store(true, Ordering::Release);
+    }
+
+    /// Set the movement control flags. The movement loop picks this up on
+    /// its next tick (~100 ms latency).
+    ///
+    /// Use `movement::CONTROL_AT_POS` for forward, `CONTROL_STOP` for idle, etc.
+    /// Flags can be OR-ed together: `CONTROL_AT_POS | CONTROL_FAST_AT`.
+    pub fn set_movement_flags(&self, flags: u32) {
+        self.movement_flags.store(flags, Ordering::Release);
     }
 
     pub async fn login(
@@ -554,26 +655,23 @@ impl GridClient {
             let (ack_sender, mut ack_receiver) = oneshot::channel();
             self.reliable_acks.lock().await.insert(sequence, ack_sender);
 
-            let mut circuit_confirmed = false;
-            for attempt in 0..=USE_CIRCUIT_CODE_RETRIES {
-                use_circuit_code.header.resent = attempt > 0;
-                self.network.send_packet(&mut use_circuit_code).await?;
+            // Send once — the reliable-resend layer (reliability.rs) handles
+            // automatic retransmission with MSG_RESENT flag and adaptive RTO.
+            self.network.send_packet(&mut use_circuit_code).await?;
 
+            // Wait for the PacketAck. The resend loop will keep retrying
+            // underneath us; we just need to observe the ack within the
+            // timeout window.
+            let circuit_confirmed =
                 match tokio::time::timeout(USE_CIRCUIT_CODE_TIMEOUT, &mut ack_receiver).await {
-                    Ok(Ok(())) => {
-                        circuit_confirmed = true;
-                        break;
-                    }
-                    Ok(Err(_)) => break,
-                    Err(_) => {}
-                }
-            }
+                    Ok(Ok(())) => true,
+                    Ok(Err(_)) => false,
+                    Err(_) => false,
+                };
             self.reliable_acks.lock().await.remove(&sequence);
 
             if !circuit_confirmed {
-                return Err(
-                    "The simulator did not acknowledge UseCircuitCode after 4 attempts.".into(),
-                );
+                return Err("The simulator did not acknowledge UseCircuitCode within 15s.".into());
             }
 
             // Firestorm performs this only after the circuit acknowledgement.
@@ -595,6 +693,12 @@ impl GridClient {
             if !silent {
                 println!("Simulator circuit established.");
             }
+
+            // Start the continuous movement loop. It sends AgentUpdate at
+            // ~10 Hz using the avatar position from AgentMovementComplete as
+            // the camera center. The initial control_flags is CONTROL_STOP
+            // (idle); callers set movement via set_movement_flags().
+            self.start_movement_loop().await;
         } else {
             return Err("Invalid login response format".into());
         }
@@ -607,6 +711,9 @@ impl GridClient {
     /// After calling this, the `LogoutReply` handler sets
     /// `core_state.logout_confirmed` to `true`.
     pub async fn logout(&self) -> Result<(), std::io::Error> {
+        // Stop the movement loop before logging out.
+        self.stop_movement_loop();
+
         let (agent_id, session_id) = {
             let sim = self.simulator.lock().await;
             if let Some(s) = sim.as_ref() {

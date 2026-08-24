@@ -110,7 +110,8 @@ in Rust to gain:
 
 ### ✅ Working today
 - XML-RPC login to Second Life / OpenSimulator grids
-- UDP circuit establishment (`UseCircuitCode` with retry + acknowledgement)
+- UDP circuit establishment (`UseCircuitCode` with reliable-resend layer
+  handling retransmission automatically — no manual retry loop)
 - `CompleteAgentMovement` and `RegionHandshake` exchange
 - Ping/pong keepalive handling
 - Reliable packet acknowledgement tracking
@@ -127,6 +128,10 @@ in Rust to gain:
   `OSD::from_notation()`, round-trip tested
 - **Avatar movement** — `AgentUpdate` with control flags (forward, backward,
   strafe, turn, up/down, fly), camera vectors, body rotation
+- **Continuous movement loop** — `GridClient` spawns a ~10 Hz AgentUpdate
+  loop automatically after login, using `AgentMovementComplete` position
+  data as the camera center. Callers drive movement via
+  `set_movement_flags()`; the loop is stopped on `logout()`
 - **Local chat** — `ChatFromViewer` (say, shout, whisper) on any channel;
   `ChatFromSimulator` parsing for incoming messages
 - **Instant messaging** — `ImprovedInstantMessage` for private IMs, teleport
@@ -143,20 +148,14 @@ in Rust to gain:
 - **Group operations** — join (`JoinGroupRequest`), leave
   (`LeaveGroupRequest`), parse replies (`JoinGroupReply`,
   `LeaveGroupReply`), profile parsing (`GroupProfileReply`)
-- **Core packet handlers** — `AgentMovementComplete` (avatar position),
-  `ChatFromSimulator` (local chat), `HealthMessage` (avatar health),
-  `LogoutReply` (logout confirmation), `DisableSimulator` (region shutdown),
-  `UUIDNameReply` (display name cache)
-- **GridClient API** — `logout()`, `say()`, `shout()`, `send_im()`,
-  `rebake()`, `fetch_inventory_folder()`, `join_group()`, `leave_group()`
-
-### ⚠️ Partially implemented
-- Reliable resend covers all reliable packets; `UseCircuitCode` still has its
-  own dedicated retry loop for backward compatibility
-- Movement sends `AgentUpdate` packets; continuous movement loop not yet
-  wired into `GridClient` (caller must drive `send_agent_update` ~10×/s)
-- `AgentMovementComplete` is captured into `core_state.avatar_position` but
-  not yet used to drive automatic movement
+- **Core packet handlers** — `AgentMovementComplete` (avatar position,
+  drives movement loop), `ChatFromSimulator` (local chat), `HealthMessage`
+  (avatar health), `LogoutReply` (logout confirmation), `DisableSimulator`
+  (region shutdown), `UUIDNameReply` (display name cache)
+- **GridClient API** — `login()`, `login_silent()`, `logout()`, `say()`,
+  `shout()`, `send_im()`, `rebake()`, `fetch_inventory_folder()`,
+  `join_group()`, `leave_group()`, `start_movement_loop()`,
+  `stop_movement_loop()`, `set_movement_flags()`
 
 ### ❌ Missing / not yet implemented
 - No published crates.io release yet
@@ -214,6 +213,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .login(&params, "https://login.agni.lindenlab.com/cgi-bin/login.cgi")
         .await?;
     client.start_network_loop().await;
+
+    // The movement loop starts automatically after login. Drive the avatar:
+    // client.set_movement_flags(rustmetaverse::movement::CONTROL_AT_POS);
+    // tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // client.set_movement_flags(rustmetaverse::movement::CONTROL_STOP);
 
     // Wait for region handshake, then interact with the grid...
     Ok(())

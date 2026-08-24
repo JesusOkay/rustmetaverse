@@ -5,7 +5,9 @@
 //!
 //! - [`GridClient`]: the main entry point. Owns the network manager,
 //!   packet dispatcher, and simulator session state. Drives login,
-//!   circuit establishment, and the receive loop.
+//!   circuit establishment, the receive loop, and a continuous ~10 Hz
+//!   movement loop that sends `AgentUpdate` using position data from
+//!   `AgentMovementComplete`.
 //! - [`login()`]: XML-RPC login to a grid's login endpoint.
 //! - [`NetworkManager`]: the tokio-based UDP socket with an actor-pattern
 //!   sender and atomic sequence numbering.
@@ -17,7 +19,8 @@
 //!
 //! - [`chat`]: local chat (ChatFromViewer / ChatFromSimulator)
 //! - [`messaging`]: instant messaging (ImprovedInstantMessage)
-//! - [`movement`]: avatar movement (AgentUpdate with control flags)
+//! - [`movement`]: avatar movement (AgentUpdate with control flags,
+//!   continuous ~10 Hz loop via `GridClient::start_movement_loop`)
 //! - [`appearance`]: avatar appearance (rebake, AvatarAppearance parsing)
 //! - [`inventory`]: inventory operations (FetchInventoryDescendents)
 //! - [`objects`]: object manipulation (create, delete, link, rename)
@@ -27,6 +30,7 @@
 //!
 //! ```no_run
 //! use rustmetaverse::{GridClient, LoginParams};
+//! use rustmetaverse::movement;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -40,6 +44,14 @@
 //! };
 //! client.login(&params, "https://login.agni.lindenlab.com/cgi-bin/login.cgi").await?;
 //! client.start_network_loop().await;
+//!
+//! // The movement loop starts automatically after login. Drive the avatar
+//! // forward by setting movement flags:
+//! client.set_movement_flags(movement::CONTROL_AT_POS);
+//! tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+//! client.set_movement_flags(movement::CONTROL_STOP);
+//!
+//! client.logout().await?;
 //! # Ok(())
 //! # }
 //! ```
